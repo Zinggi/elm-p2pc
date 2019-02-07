@@ -1,0 +1,21 @@
+{
+  "name": "p2pc",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently 'elm-live -u -- src/Main.elm --output=dist/elm.js' 'parcel index.html'",
+    "build": "elm make src/Main.elm --output=dist/elm.js && parcel build index.html"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^4.1.0",
+    "elm-hot": "^1.0.1",
+    "node-elm-compiler": "^5.0.1",
+    "parcel-bundler": "^1.11.0"
+  },
+  "dependencies": {
+    "peerjs": "0.3.16"
+  }
+}
