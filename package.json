@@ -16,6 +16,6 @@
     "parcel-bundler": "^1.11.0"
   },
   "dependencies": {
-    "peerjs": "0.3.16"
+    "simple-peer": "^9.2.1"
   }
 }

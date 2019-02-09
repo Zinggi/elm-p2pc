@@ -1,51 +1,51 @@
-import Peer from "peerjs";
+import Peer from "simple-peer";
 import { Elm } from "./dist/elm.js";
 
 const app = Elm.Main.init({
   node: document.getElementById("main")
 });
 
-const peer = new Peer({ debug: 2 });
-
-peer.on("open", id => {
-  console.log("open", id);
-  app.ports.input.send({ type: "GotId", id });
-});
-
-peer.on("connection", conn => {
-  console.log("connection", conn);
-  window.conn = conn;
-  window.conn.on("data", data => {
-    console.log("Received", data);
-    app.ports.input.send({ type: "GotMsg", data });
-  });
-  setTimeout(() => conn.send({ type: "Ready" }), 1000);
-});
+const peerInit = new Peer({ initiator: true });
+const peerListen = new Peer({ initiator: false });
+let peer = peerInit;
 
 app.ports.output.subscribe(data => {
-  console.log("elm data", data);
   if (data.type === "Connect") {
-    window.conn = peer.connect(data.otherId);
-    window.conn.on("data", data => {
-      console.log("Received", data);
-      app.ports.input.send({ type: "GotMsg", data });
-    });
-    // Send messages
-    // setTimeout(() => conn.send("Hello!"), 1000);
+    try {
+      const signal = JSON.parse(data.otherOffer);
+      if (signal.type === "offer") {
+        peer = peerListen;
+      } else if (signal.type === "answer") {
+        peer = peerInit;
+      }
+      peer.signal(signal);
+    } catch (error) {}
   } else if (data.type === "Send") {
-    window.conn.send(data.data);
+    peer.send(JSON.stringify(data.data));
   }
-  // app.ports.input.send(42);
 });
 
-peer.on("disconnected", conn => {
-  console.log("disconnected", conn);
-});
-
-peer.on("close", conn => {
-  console.log("close", conn);
-});
-
-peer.on("error", error => {
-  console.log("error", error);
+[peerListen, peerInit].forEach(p => {
+  p.on("data", data => {
+    const d = JSON.parse(data);
+    console.log("on data", d);
+    app.ports.input.send({ type: "GotMsg", data: d });
+  });
+  p.on("signal", data => {
+    console.log("SIGNAL", data);
+    if (data.type === "offer") {
+      app.ports.input.send({ type: "GotOffer", offer: JSON.stringify(data) });
+    } else if (data.type === "answer") {
+      app.ports.input.send({ type: "GotAnswer", answer: JSON.stringify(data) });
+    }
+  });
+  p.on("connect", () => {
+    console.log("connect");
+    if (peer === peerInit) {
+      peer.send(JSON.stringify({ type: "Ready" }));
+    }
+  });
+  p.on("error", err => {
+    console.log("error", err);
+  });
 });

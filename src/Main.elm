@@ -19,9 +19,10 @@ import SquareRank as Rank
 
 
 type alias Model =
-    { myId : Maybe String
+    { myOffer : Maybe String
+    , myAnswer : Maybe String
     , error : Maybe String
-    , otherId : String
+    , otherOffer : String
     , game : Game
     , isBlack : Bool
     , selectedSquare : Maybe Square
@@ -36,8 +37,9 @@ initModel =
     , selectedSquare = Nothing
     , candidateMoves = []
     , isBlack = False
-    , myId = Nothing
-    , otherId = ""
+    , myOffer = Nothing
+    , myAnswer = Nothing
+    , otherOffer = ""
     , gameState = Init
     }
 
@@ -54,11 +56,11 @@ type GameState
 
 type Msg
     = JsPort Value
-    | SetOtherId String
-    | Connect
+    | SetOtherOffer String
     | SquarePressed Square
       -- | DoMove Move
-    | GotId String
+    | GotOffer String
+    | GotAnswer String
     | Ready
     | Ready2
     | GotMove String
@@ -76,19 +78,19 @@ update msg model =
                 Err err ->
                     ( { model | error = Just (JD.errorToString err) }, Cmd.none )
 
-        SetOtherId s ->
-            ( { model | otherId = s }, Cmd.none )
-
-        Connect ->
-            ( model, output (JE.object [ ( "type", JE.string "Connect" ), ( "otherId", JE.string model.otherId ) ]) )
+        SetOtherOffer s ->
+            ( { model | otherOffer = s }
+            , output (JE.object [ ( "type", JE.string "Connect" ), ( "otherOffer", JE.string s ) ])
+            )
 
         SquarePressed sq ->
             squarePressed sq model
 
-        -- DoMove move ->
-        --     doMove move model
-        GotId id ->
-            ( { model | myId = Just id }, Cmd.none )
+        GotOffer offer ->
+            ( { model | myOffer = Just offer }, Cmd.none )
+
+        GotAnswer answer ->
+            ( { model | myAnswer = Just answer }, Cmd.none )
 
         Ready ->
             ( { model | gameState = MyTurn }, send [ ( "type", JE.string "Ready2" ) ] )
@@ -114,14 +116,9 @@ update msg model =
 rematch model =
     { model
         | game = Game.empty
-
-        -- , error = Nothing
         , selectedSquare = Nothing
         , candidateMoves = []
         , isBlack = not model.isBlack
-
-        -- , myId = Nothing
-        -- , otherId = ""
         , gameState =
             if model.isBlack then
                 MyTurn
@@ -193,9 +190,13 @@ portDecoder =
         |> JD.andThen
             (\t ->
                 case t of
-                    "GotId" ->
-                        JD.field "id" JD.string
-                            |> JD.map GotId
+                    "GotOffer" ->
+                        JD.field "offer" JD.string
+                            |> JD.map GotOffer
+
+                    "GotAnswer" ->
+                        JD.field "answer" JD.string
+                            |> JD.map GotAnswer
 
                     "GotMsg" ->
                         JD.field "data" msgDecoder
@@ -238,31 +239,61 @@ port input : (Value -> msg) -> Sub msg
 view : Model -> Html Msg
 view model =
     div []
-        [ div [] [ text "my id", Html.input [ readonly True, value (model.myId |> Maybe.withDefault "") ] [] ]
-        , text "other id"
+        [ connectUi model
         , case model.error of
             Nothing ->
                 text ""
 
             Just e ->
                 div [] [ b [] [ text e ] ]
-        , Html.input [ value model.otherId, onInput SetOtherId ] []
-        , button [ onClick Connect ] [ text "Connect" ]
         , case model.gameState of
             Init ->
-                div [] [ text "Waiting for other player" ]
+                text ""
 
             MyTurn ->
-                div [] [ board model.isBlack (Game.position model.game) 400.0 model.isBlack ]
+                div []
+                    [ board model.selectedSquare model.isBlack (Game.position model.game) 400.0
+                    , text "Your turn, make a move"
+                    ]
 
             OtherTurn ->
                 div []
-                    [ board model.isBlack (Game.position model.game) 400.0 model.isBlack
+                    [ board model.selectedSquare model.isBlack (Game.position model.game) 400.0
                     , text "Wait for other player to make a move"
                     ]
-
-        -- , div [] [ text (Debug.toString model) ]
         ]
+
+
+connectUi model =
+    if model.gameState == Init then
+        let
+            ( kind, txt ) =
+                case model.myAnswer of
+                    Just a ->
+                        ( "Answer", a )
+
+                    Nothing ->
+                        ( "Offer", model.myOffer |> Maybe.withDefault "" )
+
+            offerOrAnswer =
+                div [] [ text kind, Html.input [ readonly True, value txt ] [] ]
+
+            ( offer, answer ) =
+                if kind == "Offer" then
+                    ( offerOrAnswer, text "" )
+
+                else
+                    ( text "", offerOrAnswer )
+        in
+        div []
+            [ offer
+            , text "Paste other offer / answer here"
+            , Html.input [ value model.otherOffer, onInput SetOtherOffer ] []
+            , answer
+            ]
+
+    else
+        text ""
 
 
 px : Float -> String
@@ -275,8 +306,8 @@ url u =
     "url(" ++ u ++ ")"
 
 
-board : Bool -> Position -> Float -> Bool -> Html Msg
-board isBlack position size isRotated =
+board : Maybe Square -> Bool -> Position -> Float -> Html Msg
+board selectedSquare isBlack position size =
     div []
         [ Html.div
             [ style "width" (px size)
@@ -288,7 +319,8 @@ board isBlack position size isRotated =
             (List.map
                 (\s ->
                     square
-                        (squareToCoordinates s isRotated)
+                        (Just s == selectedSquare)
+                        (squareToCoordinates s isBlack)
                         (Position.pieceOn s position)
                         (size / 8)
                         (SquarePressed s)
@@ -314,12 +346,15 @@ board isBlack position size isRotated =
         ]
 
 
-square : ( Int, Int ) -> Maybe Piece -> Float -> Msg -> Html Msg
-square ( col, row ) piece sqSize msg =
+square : Bool -> ( Int, Int ) -> Maybe Piece -> Float -> Msg -> Html Msg
+square isSelected ( col, row ) piece sqSize msg =
     Html.div
         [ onClick msg
         , style "backgroundColor"
-            (if modBy 2 (col + row) == 0 then
+            (if isSelected then
+                "rgb(133, 57, 146)"
+
+             else if modBy 2 (col + row) == 0 then
                 "rgb(200, 200, 200)"
 
              else
