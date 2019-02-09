@@ -13,6 +13,7 @@ import Piece exposing (Piece)
 import PieceColor
 import PieceType
 import Position exposing (Position)
+import Set exposing (Set)
 import Square exposing (Square)
 import SquareFile as File
 import SquareRank as Rank
@@ -101,7 +102,14 @@ update msg model =
         GotMove m ->
             case Notation.fromSan m (Game.position model.game) of
                 Just move ->
-                    ( { model | game = Game.addMove move model.game, gameState = MyTurn, selectedSquare = Nothing, candidateMoves = [] }, Cmd.none )
+                    ( { model
+                        | game = Game.addMove move model.game
+                        , gameState = MyTurn
+                        , selectedSquare = Nothing
+                        , candidateMoves = []
+                      }
+                    , Cmd.none
+                    )
 
                 Nothing ->
                     ( model, Cmd.none )
@@ -252,13 +260,13 @@ view model =
 
             MyTurn ->
                 div []
-                    [ board model.selectedSquare model.isBlack (Game.position model.game) 400.0
+                    [ board model.candidateMoves model.selectedSquare model.isBlack (Game.position model.game) 400.0
                     , text "Your turn, make a move"
                     ]
 
             OtherTurn ->
                 div []
-                    [ board model.selectedSquare model.isBlack (Game.position model.game) 400.0
+                    [ board model.candidateMoves model.selectedSquare model.isBlack (Game.position model.game) 400.0
                     , text "Wait for other player to make a move"
                     ]
         ]
@@ -306,8 +314,12 @@ url u =
     "url(" ++ u ++ ")"
 
 
-board : Maybe Square -> Bool -> Position -> Float -> Html Msg
-board selectedSquare isBlack position size =
+board : List Move -> Maybe Square -> Bool -> Position -> Float -> Html Msg
+board possibleMoves selectedSquare isBlack position size =
+    let
+        possibleSquares =
+            Set.fromList <| List.map (Move.to >> Square.toInt) possibleMoves
+    in
     div []
         [ Html.div
             [ style "width" (px size)
@@ -320,6 +332,7 @@ board selectedSquare isBlack position size =
                 (\s ->
                     square
                         (Just s == selectedSquare)
+                        (Set.member (Square.toInt s) possibleSquares)
                         (squareToCoordinates s isBlack)
                         (Position.pieceOn s position)
                         (size / 8)
@@ -346,8 +359,8 @@ board selectedSquare isBlack position size =
         ]
 
 
-square : Bool -> ( Int, Int ) -> Maybe Piece -> Float -> Msg -> Html Msg
-square isSelected ( col, row ) piece sqSize msg =
+square : Bool -> Bool -> ( Int, Int ) -> Maybe Piece -> Float -> Msg -> Html Msg
+square isSelected isPossibleMove ( col, row ) piece sqSize msg =
     Html.div
         [ onClick msg
         , style "backgroundColor"
@@ -360,6 +373,11 @@ square isSelected ( col, row ) piece sqSize msg =
              else
                 "rgb(140, 140, 140)"
             )
+        , if isPossibleMove then
+            style "filter" "sepia(0.6)"
+
+          else
+            style "" ""
         , style "position" "absolute"
         , style "top" (px (toFloat row * sqSize))
         , style "left" (px (toFloat col * sqSize))
