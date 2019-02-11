@@ -12,19 +12,23 @@ let peer = peerInit;
 app.ports.output.subscribe(data => {
   if (data.type === "Connect") {
     try {
-      const signal = JSON.parse(data.otherOffer);
-      if (signal.type === "offer") {
-        peer = peerListen;
-      } else if (signal.type === "answer") {
-        peer = peerInit;
-      }
-      peer.signal(signal);
+      const signals = JSON.parse(data.otherOffer);
+      signals.forEach(signal => {
+        if (signal.type === "offer") {
+          peer = peerListen;
+        } else if (signal.type === "answer") {
+          peer = peerInit;
+        }
+        peer.signal(signal);
+      });
     } catch (error) {}
   } else if (data.type === "Send") {
     peer.send(JSON.stringify(data.data));
   }
 });
 
+let offers = [];
+let isOffers = true;
 [peerListen, peerInit].forEach(p => {
   p.on("data", data => {
     const d = JSON.parse(data);
@@ -33,10 +37,18 @@ app.ports.output.subscribe(data => {
   });
   p.on("signal", data => {
     console.log("SIGNAL", data);
-    if (data.type === "offer") {
-      app.ports.input.send({ type: "GotOffer", offer: JSON.stringify(data) });
-    } else if (data.type === "answer") {
-      app.ports.input.send({ type: "GotAnswer", answer: JSON.stringify(data) });
+    if (data.type === "answer") {
+      offers = [];
+      isOffers = false;
+    }
+    offers.push(data);
+    if (isOffers) {
+      app.ports.input.send({ type: "GotOffer", offer: JSON.stringify(offers) });
+    } else {
+      app.ports.input.send({
+        type: "GotAnswer",
+        answer: JSON.stringify(offers)
+      });
     }
   });
   p.on("connect", () => {
